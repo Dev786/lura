@@ -51,6 +51,7 @@ func NoOpHTTPStatusHandler(_ context.Context, resp *http.Response) (*http.Respon
 	return resp, nil
 }
 
+// Custom Struct Added for our use case
 type HttpBody struct{
 	StatusCode int `json:"statusCode"`
 	Message string `json:"message"`
@@ -75,6 +76,7 @@ type ErrorResponse struct{
 	ErrorService ServiceError `json:"error_service"`
 }
 
+// custom function to parse the http_body
 func ModifyServiceErrorResponse(resp *http.Response){
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
