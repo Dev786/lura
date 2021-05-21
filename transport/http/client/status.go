@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"encoding/json"
+	"strings"
 	"net/http"
+	"reflect"
 	"github.com/devopsfaith/krakend/config"
 )
 
@@ -63,51 +66,50 @@ type HttpErrorResponse struct {
 	HttpStatusCode int `json:"http_status_code"`
 }
 
-type HttpErrorService struct {
-	ErrorService HttpErrorResponse `json:"error_service"`
-}
-
 type ServiceError struct {
 	Body HttpBody `json:"http_body"`
 	HttpStatusCode int `json:"http_status_code"`
 }
 
-type ErrorResponse struct{
-	ErrorService ServiceError `json:"error_service"`
-}
-
 // custom function to parse the http_body
-func ModifyServiceErrorResponse(resp *http.Response){
+func ModifyServiceErrorResponse(resp *http.Response, name string){
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		body = []byte{}
 	}
 	defer resp.Body.Close()
-	var response map[string]interface{}
+	var response map[string]HttpErrorResponse
 	err = json.Unmarshal([]byte(body), &response)
+	
 	// check if the error_service exists
-	if _, ok := response["error_service"];ok && err == nil{
-		var httpErrorResponse HttpErrorService
-		err = json.Unmarshal([]byte(body), &httpErrorResponse)
-		var httpBody HttpBody
-		err = json.Unmarshal([]byte(httpErrorResponse.ErrorService.HttpBody), &httpBody)
-		serviceError := ServiceError{
-			httpBody,
-			httpErrorResponse.ErrorService.HttpStatusCode,
+	errorServiceKeys := reflect.ValueOf(response).MapKeys()
+	fmt.Println(errorServiceKeys)
+	if len(errorServiceKeys) > 0 {
+		var errorServiceKey string = errorServiceKeys[0].String()
+		if strings.Contains(errorServiceKey,("error_")){
+			if _, ok := response[errorServiceKey];ok && err == nil{
+				var httpBody HttpBody
+				err = json.Unmarshal([]byte(response[errorServiceKey].HttpBody), &httpBody)
+				serviceError := ServiceError{
+					httpBody,
+					response[errorServiceKey].HttpStatusCode,
+				}
+				// This code renames the error_service based on the name provided in return_error_details
+				clientResponse := map[string]ServiceError{
+					"error_"+name: serviceError,
+				}
+				body,_ = json.Marshal(clientResponse)
+			}
 		}
-
-		// reformatting body
-		body,_ = json.Marshal(ErrorResponse{
-			serviceError,
-		})
 	}
+	
 	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 }
 
 // DetailedHTTPStatusHandler is a HTTPStatusHandler implementation
 func DetailedHTTPStatusHandler(next HTTPStatusHandler, name string) HTTPStatusHandler {
 	return func(ctx context.Context, resp *http.Response) (*http.Response, error) {
-		ModifyServiceErrorResponse(resp);
+		ModifyServiceErrorResponse(resp, name);
 		if r, err := next(ctx, resp); err == nil {
 			return r, nil
 		}
