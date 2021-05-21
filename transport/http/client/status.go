@@ -85,6 +85,7 @@ func ModifyServiceErrorResponse(resp *http.Response){
 	defer resp.Body.Close()
 	var response map[string]interface{}
 	err = json.Unmarshal([]byte(body), &response)
+	// check if the error_service exists
 	if _, ok := response["error_service"];ok && err == nil{
 		var httpErrorResponse HttpErrorService
 		err = json.Unmarshal([]byte(body), &httpErrorResponse)
@@ -95,10 +96,10 @@ func ModifyServiceErrorResponse(resp *http.Response){
 			httpErrorResponse.ErrorService.HttpStatusCode,
 		}
 
+		// reformatting body
 		body,_ = json.Marshal(ErrorResponse{
 			serviceError,
 		})
-		// format the response here
 	}
 	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 }
