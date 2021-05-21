@@ -6,8 +6,8 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
+	"encoding/json"
 	"net/http"
-
 	"github.com/devopsfaith/krakend/config"
 )
 
@@ -51,9 +51,60 @@ func NoOpHTTPStatusHandler(_ context.Context, resp *http.Response) (*http.Respon
 	return resp, nil
 }
 
+type HttpBody struct{
+	StatusCode int `json:"statusCode"`
+	Message string `json:"message"`
+	IEC string `json:"iec"`
+}
+
+type HttpErrorResponse struct {
+	HttpBody string `json:"http_body"`
+	HttpStatusCode int `json:"http_status_code"`
+}
+
+type HttpErrorService struct {
+	ErrorService HttpErrorResponse `json:"error_service"`
+}
+
+type ServiceError struct {
+	Body HttpBody `json:"http_body"`
+	HttpStatusCode int `json:"http_status_code"`
+}
+
+type ErrorResponse struct{
+	ErrorService ServiceError `json:"error_service"`
+}
+
+func ModifyServiceErrorResponse(resp *http.Response){
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		body = []byte{}
+	}
+	defer resp.Body.Close()
+	var response map[string]interface{}
+	err = json.Unmarshal([]byte(body), &response)
+	if _, ok := response["error_service"];ok && err == nil{
+		var httpErrorResponse HttpErrorService
+		err = json.Unmarshal([]byte(body), &httpErrorResponse)
+		var httpBody HttpBody
+		err = json.Unmarshal([]byte(httpErrorResponse.ErrorService.HttpBody), &httpBody)
+		serviceError := ServiceError{
+			httpBody,
+			httpErrorResponse.ErrorService.HttpStatusCode,
+		}
+
+		body,_ = json.Marshal(ErrorResponse{
+			serviceError,
+		})
+		// format the response here
+	}
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
+}
+
 // DetailedHTTPStatusHandler is a HTTPStatusHandler implementation
 func DetailedHTTPStatusHandler(next HTTPStatusHandler, name string) HTTPStatusHandler {
 	return func(ctx context.Context, resp *http.Response) (*http.Response, error) {
+		ModifyServiceErrorResponse(resp);
 		if r, err := next(ctx, resp); err == nil {
 			return r, nil
 		}
